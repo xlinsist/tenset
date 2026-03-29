@@ -6,6 +6,7 @@ import gc
 import glob
 import time
 import os
+import random
 
 from tqdm import tqdm
 
@@ -14,16 +15,24 @@ from tvm import auto_scheduler
 from common import load_and_register_tasks, get_to_measure_filename
 
 
-def dump_program(task, size, max_retry_iter=10):
+def dump_program(task, size, seed=42, max_retry_iter=10, force=False):
     filename = get_to_measure_filename(task)
-    if os.path.exists(filename):
+    if os.path.exists(filename) and not force:
         return
+    if force and os.path.exists(filename):
+        os.remove(filename)
 
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
-    policy = auto_scheduler.SketchPolicy(task,
-            params={'evolutionary_search_num_iters': 1,
-                    'evolutionary_search_population': min(size, 2560)}, verbose=0)
+    policy = auto_scheduler.SketchPolicy(
+        task,
+        params={
+            "evolutionary_search_num_iters": 1,
+            "evolutionary_search_population": min(size, 2560),
+        },
+        seed=seed,
+        verbose=0,
+    )
 
     states = policy.sample_initial_population()
 
@@ -75,7 +84,14 @@ if __name__ == "__main__":
     parser.add_argument("--start-idx", type=int)
     parser.add_argument("--end-idx", type=int)
     parser.add_argument("--size", type=int, default=4000)
+    parser.add_argument("--seed", type=int, default=42, help="random seed for evolutionary search")
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+
+    # TVM's SketchPolicy uses `seed or random.randint(...)`, so 0 would be treated as unset.
+    # Convert to a non-zero deterministic seed.
+    sketch_seed = args.seed if args.seed != 0 else 42
+    random.seed(args.seed)
 
     tasks = load_and_register_tasks()
 
@@ -84,6 +100,10 @@ if __name__ == "__main__":
 
     # Dump programs for all tasks
     for task in tqdm(tasks[start_idx:end_idx]):
-        dump_program(task, size=args.size)
+        dump_program(
+            task,
+            size=args.size,
+            seed=sketch_seed,
+            force=args.force,
+        )
         gc.collect()
-

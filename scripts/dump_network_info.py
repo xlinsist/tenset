@@ -225,13 +225,30 @@ def get_all_tasks():
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--target", type=str, default="llvm")
+    parser.add_argument("--start-network-idx", type=int, default=0)
+    parser.add_argument("--end-network-idx", type=int)
+    parser.add_argument("--continue-on-error", action="store_true")
+    args = parser.parse_args()
+
     os.makedirs(NETWORK_INFO_FOLDER, exist_ok=True)
 
     # Dump the relay ir and task info for all networks
     network_keys = build_network_keys()
-    target = tvm.target.Target('llvm')
-    for key in tqdm(network_keys):
-        dump_network(key, target)
+    target = tvm.target.Target(args.target)
+    end_idx = args.end_network_idx if args.end_network_idx is not None else len(network_keys)
+    end_idx = min(end_idx, len(network_keys))
+    start_idx = max(0, args.start_network_idx)
+
+    for key in tqdm(network_keys[start_idx:end_idx]):
+        try:
+            dump_network(key, target)
+        except Exception as err:  # pylint: disable=broad-except
+            if args.continue_on_error:
+                print(f"[WARN] skip {key} due to: {type(err).__name__}: {err}")
+            else:
+                raise
         gc.collect()
 
     # Dump an index table that contains all tasks

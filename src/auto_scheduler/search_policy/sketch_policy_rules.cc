@@ -35,6 +35,70 @@
 namespace tvm {
 namespace auto_scheduler {
 
+namespace {
+
+int64_t EstimateSharedBytesForStageFromOp(const Stage& stage) {
+  auto pop = stage->op.as<te::ComputeOpNode>();
+  if (pop == nullptr || pop->num_outputs() == 0) {
+    return 0;
+  }
+
+  int64_t elem_count = 1;
+  for (const auto& axis : pop->axis) {
+    if (!axis->dom.defined()) {
+      return std::numeric_limits<int64_t>::max();
+    }
+    const auto* pint = axis->dom->extent.as<IntImmNode>();
+    if (pint == nullptr) {
+      return std::numeric_limits<int64_t>::max();
+    }
+    int64_t extent = pint->value;
+    if (extent <= 0 || elem_count > std::numeric_limits<int64_t>::max() / extent) {
+      return std::numeric_limits<int64_t>::max();
+    }
+    elem_count *= extent;
+  }
+
+  DataType dtype = stage->op.output(0)->dtype;
+  int64_t elem_bytes = (dtype.bits() * dtype.lanes() + 7) / 8;
+  if (elem_bytes <= 0 ||
+      elem_count > std::numeric_limits<int64_t>::max() / std::max<int64_t>(elem_bytes, 1)) {
+    return std::numeric_limits<int64_t>::max();
+  }
+  return elem_count * elem_bytes;
+}
+
+// Estimate total shared-memory bytes used by ".shared" cache-read stages
+// attached to the same root stage in one kernel.
+int64_t EstimateSharedBytesForRoot(const State& state, int root_stage_id) {
+  int64_t total_bytes = 0;
+
+  for (size_t stage_id = 0; stage_id < state->stages.size(); ++stage_id) {
+    const Stage& stage = state->stages[stage_id];
+    if (stage->compute_at != ComputeAtKind::kIter || !StrEndsWith(stage->op->name, ".shared")) {
+      continue;
+    }
+
+    const auto& it = state->attach_map->stage_to_attach_iter.find(stage_id);
+    if (it == state->attach_map->stage_to_attach_iter.end() || it->second.first != root_stage_id) {
+      continue;
+    }
+
+    auto pop = stage->op.as<te::ComputeOpNode>();
+    if (pop == nullptr || pop->num_outputs() == 0) {
+      continue;
+    }
+    total_bytes += EstimateSharedBytesForStageFromOp(stage);
+    if (total_bytes < 0) {
+      return std::numeric_limits<int64_t>::max();
+    }
+  }
+
+  return total_bytes;
+}
+
+}  // namespace
+
 static std::vector<int> auto_unroll_configs_cpu = {0, 16, 64, 512};
 static std::vector<int> auto_unroll_configs_gpu = {0, 16, 64, 512, 1024};
 
@@ -189,6 +253,7 @@ std::vector<std::pair<State, int>> RuleAddCacheRead::Apply(const SketchPolicyNod
   const SearchTask& task = policy.search_task;
   const std::set<int>& consumers = GetConsumers(task, state, stage_id);
   State tmp_s = state;
+  int max_shared_bytes = task->hardware_params->max_shared_memory_per_block;
 
   int target_stage_id_offset = 0;
   for (int orig_target_stage_id : consumers) {
@@ -196,6 +261,16 @@ std::vector<std::pair<State, int>> RuleAddCacheRead::Apply(const SketchPolicyNod
 
     // Cache read add shared memory
     int added_stage_id = tmp_s.cache_read(stage_id, "shared", {target_stage_id}, task->compute_dag);
+
+    // Skip this cache-read strategy if a single shared stage already exceeds
+    // the per-block shared-memory budget.
+    if (max_shared_bytes > 0) {
+      int64_t stage_shared_bytes = EstimateSharedBytesForStageFromOp(tmp_s->stages[added_stage_id]);
+      if (stage_shared_bytes > max_shared_bytes) {
+        return {std::make_pair(state, stage_id - 1)};
+      }
+    }
+
     target_stage_id_offset++;
     target_stage_id++;
 
@@ -904,6 +979,14 @@ PopulationGenerationRule::ResultKind InitThreadBind::Apply(SketchPolicyNode* pol
       const auto& iters1 =
           state->follow_fused_split(stage_id, iters0[0], spatial_split_step_ids, 1, true);
       state->bind(stage_id, iters1[1], IteratorAnnotation::kThreadX);
+
+      // Reject states that exceed per-block shared memory budget.
+      int root_stage_id = it->second.first;
+      int64_t shared_bytes = EstimateSharedBytesForRoot(*state, root_stage_id);
+      int max_shared_bytes = policy->search_task->hardware_params->max_shared_memory_per_block;
+      if (max_shared_bytes > 0 && shared_bytes > max_shared_bytes) {
+        return ResultKind::kInvalid;
+      }
     }
   }
   return ResultKind::kValid;

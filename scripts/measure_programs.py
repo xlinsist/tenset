@@ -23,20 +23,41 @@ from tqdm import tqdm
 import tvm
 from tvm import auto_scheduler
 
-from common import (load_and_register_tasks,
-    get_measure_record_filename, get_to_measure_filename)
+from common import (
+    load_and_register_tasks,
+    get_measure_record_filename,
+    get_to_measure_filename,
+)
 
-def make_measurer(run_timeout, repeat, number, enable_cpu_cache_flush,
-                  verbose, log_filename):
-    builder = auto_scheduler.measure.LocalBuilder()
+
+def make_measurer(
+    build_timeout,
+    build_n_parallel,
+    run_timeout,
+    repeat,
+    number,
+    enable_cpu_cache_flush,
+    verbose,
+    log_filename,
+):
+    if build_n_parallel is None:
+        build_n_parallel = max(1, (os.cpu_count() or 1))
+
+    builder = auto_scheduler.measure.LocalBuilder(
+        timeout=build_timeout,
+        n_parallel=build_n_parallel,
+    )
     runner = auto_scheduler.measure.LocalRunner(
-        timeout=run_timeout, repeat=repeat, number=number,
-        enable_cpu_cache_flush=enable_cpu_cache_flush)
+        timeout=run_timeout,
+        repeat=repeat,
+        number=number,
+        enable_cpu_cache_flush=enable_cpu_cache_flush,
+    )
     measurer = auto_scheduler.measure.ProgramMeasurer(
-	builder,
-	runner,
+        builder,
+        runner,
         [auto_scheduler.RecordToFile(log_filename)],
-	verbose=verbose,
+        verbose=verbose,
     )
     return measurer
 
@@ -86,11 +107,20 @@ if __name__ == "__main__":
     parser.add_argument("--start-idx", type=int, default=0)
     parser.add_argument("--end-idx", type=int, default=1000000)
     parser.add_argument("--step-idx", type=int, default=1)
+    parser.add_argument("--build-timeout", type=int, default=15)
+    parser.add_argument("--build-n-parallel", type=int, default=None)
+    parser.add_argument("--run-timeout", type=int, default=5)
+    parser.add_argument("--number", type=int, default=1)
+    parser.add_argument("--repeat", type=int, default=None)
+    parser.add_argument("--verbose", type=int, default=1)
+    parser.add_argument("--disable-cpu-cache-flush", action="store_true")
     args = parser.parse_args()
 
     # Load task registry
     print("Load all tasks...")
     tasks = load_and_register_tasks()
+    target = tvm.target.Target(args.target)
+    is_gpu_target = str(target.kind) in {"cuda", "rocm", "opencl", "vulkan", "metal"}
 
     end_idx = min(args.end_idx, len(tasks))
 
@@ -102,25 +132,38 @@ if __name__ == "__main__":
 
         # Set measurement arguments
         measurer_kwargs = {
-            "run_timeout": 5,
-            "number": 1,
-            "enable_cpu_cache_flush": True,
-            "verbose": 1,
+            "build_timeout": args.build_timeout,
+            "build_n_parallel": args.build_n_parallel,
+            "run_timeout": args.run_timeout,
+            "number": args.number,
+            "enable_cpu_cache_flush": not args.disable_cpu_cache_flush,
+            "verbose": args.verbose,
         }
-        if task.compute_dag.flop_ct >= 2416443392.0:
-            measurer_kwargs['repeat'] = 4
+        if args.repeat is not None:
+            measurer_kwargs["repeat"] = args.repeat
+        elif is_gpu_target:
+            # GPU measurements are more sensitive to timeout with larger repeats.
+            # Use conservative repeats by default for robustness.
+            measurer_kwargs["repeat"] = 1
+            if args.build_timeout == 15:
+                measurer_kwargs["build_timeout"] = 120
+            if args.build_n_parallel is None:
+                measurer_kwargs["build_n_parallel"] = 1
+            if args.run_timeout == 5:
+                measurer_kwargs["run_timeout"] = 20
+            if not args.disable_cpu_cache_flush:
+                measurer_kwargs["enable_cpu_cache_flush"] = False
+        elif task.compute_dag.flop_ct >= 2416443392.0:
+            measurer_kwargs["repeat"] = 4
         elif task.compute_dag.flop_ct >= 834928640.0:
-            measurer_kwargs['repeat'] = 6
+            measurer_kwargs["repeat"] = 6
         elif task.compute_dag.flop_ct <= 2097152.0:
-            measurer_kwargs['repeat'] = 10
+            measurer_kwargs["repeat"] = 10
         else:
-            measurer_kwargs['repeat'] = 8
+            measurer_kwargs["repeat"] = 8
 
         # Run measurement
-        task_key = (task.workload_key, str(task.target.kind))
-        target = tvm.target.Target(args.target)
         remeasure_file(i, task, target, args.target_host, args.batch_size, measurer_kwargs)
 
         with open("progress.txt", "a") as fout:
             fout.write(f"End {i}/{len(tasks)}: {time.time():.2f}\n")
-
