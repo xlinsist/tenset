@@ -90,7 +90,10 @@ def remeasure_file(task_idx, task, target, target_host, batch_size, measurer_kwa
         print(f"===== task: {task_idx}\t programs: {i}/{len(inputs)} =====")
         inp_batch = []
         for inp in inputs[i:min(len(inputs), i + batch_size)]:
-            inp_batch.append(auto_scheduler.MeasureInput(task, inp.state))
+            # Reconstruct full MeasureInput from record so state refs are rebound
+            # before attaching to the runtime target task.
+            recovered = auto_scheduler.measure.recover_measure_input(inp)
+            inp_batch.append(auto_scheduler.MeasureInput(task, recovered.state))
         res_batch = measurer.measure(task, empty_policy, inp_batch)
 
         timeout_ct = 0
