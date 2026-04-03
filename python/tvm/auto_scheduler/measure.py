@@ -1012,6 +1012,12 @@ def local_run(
                 time.time(),
             )
         else:
+            target_kind = str(inp.task.target.kind)
+            is_gpu_target = target_kind in {"cuda", "rocm", "opencl", "vulkan", "metal"}
+            disable_gpu_timeout_fallback = (
+                os.environ.get("TENSET_DISABLE_GPU_TIMEOUT_FALLBACK", "0") == "1"
+            )
+
             res = call_func_with_timeout(
                 timeout,
                 _timed_eval_func,
@@ -1027,16 +1033,42 @@ def local_run(
                 ),
                 add_thread_wrapper=True,
             )
+
             if isinstance(res, TimeoutError):
-                if verbose >= 1:
-                    print("*T", end="", flush=True)  # Run timeout
-                res = (
-                    (MAX_FLOAT,),
-                    MeasureErrorNo.RUN_TIMEOUT,
-                    None,
-                    build_res.time_cost + timeout,
-                    time.time(),
-                )
+                # On some GPU setups, subprocess wrapper can return timeout while
+                # in-process evaluation still succeeds. Retry once in-process.
+                if is_gpu_target and not disable_gpu_timeout_fallback:
+                    try:
+                        res = _timed_eval_func(
+                            inp.serialize(),
+                            build_res,
+                            number,
+                            repeat,
+                            min_repeat_ms,
+                            cooldown_interval,
+                            enable_cpu_cache_flush,
+                            verbose,
+                        )
+                    except Exception:  # pylint: disable=broad-except
+                        if verbose >= 1:
+                            print("*E", end="", flush=True)  # Run error
+                        res = (
+                            (MAX_FLOAT,),
+                            MeasureErrorNo.RUNTIME_DEVICE,
+                            make_traceback_info(),
+                            build_res.time_cost + timeout,
+                            time.time(),
+                        )
+                else:
+                    if verbose >= 1:
+                        print("*T", end="", flush=True)  # Run timeout
+                    res = (
+                        (MAX_FLOAT,),
+                        MeasureErrorNo.RUN_TIMEOUT,
+                        None,
+                        build_res.time_cost + timeout,
+                        time.time(),
+                    )
             elif isinstance(res, Exception):
                 if verbose >= 1:
                     print("*E", end="", flush=True)  # Run error
