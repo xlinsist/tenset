@@ -56,11 +56,49 @@ def get_task_info_filename(network_key, target):
     network_task_key = (network_key,) + (str(target.kind),)
     return f"{NETWORK_INFO_FOLDER}/{clean_name(network_task_key)}.task.pkl"
 
-def get_to_measure_filename(task):
+def get_target_signature(target):
+    # Include architecture/model in key to avoid cross-arch record mixing
+    # (e.g. sm_75 states reused on sm_89 runtime).
+    kind = str(target.kind)
+    attrs = []
+    for k in ("arch", "model"):
+        v = str(target.attrs.get(k, "")).strip()
+        if v:
+            attrs.append(f"{k}={v}")
+    return kind if not attrs else f"{kind}|{'|'.join(attrs)}"
+
+
+def get_to_measure_filename(task, target=None):
+    target = target or task.target
+    task_key = (task.workload_key, get_target_signature(target))
+    return f"{TO_MEASURE_PROGRAM_FOLDER}/{clean_name(task_key)}.json"
+
+def get_to_measure_filename_legacy(task):
     task_key = (task.workload_key, str(task.target.kind))
     return f"{TO_MEASURE_PROGRAM_FOLDER}/{clean_name(task_key)}.json"
 
+
+def get_to_measure_filename_compat(task, target=None):
+    # Prefer the new signature, fallback to historical kind-only key.
+    import os
+
+    new_file = get_to_measure_filename(task, target)
+    if os.path.exists(new_file):
+        return new_file
+
+    old_file = get_to_measure_filename_legacy(task)
+    if os.path.exists(old_file):
+        return old_file
+    return new_file
+
+
 def get_measure_record_filename(task, target=None):
+    target = target or task.target
+    task_key = (task.workload_key, get_target_signature(target))
+    return f"{MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
+
+
+def get_measure_record_filename_legacy(task, target=None):
     target = target or task.target
     task_key = (task.workload_key, str(target.kind))
     return f"{MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
@@ -96,4 +134,3 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
-

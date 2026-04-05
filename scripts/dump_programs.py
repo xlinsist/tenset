@@ -12,6 +12,8 @@ from tqdm import tqdm
 
 from tvm import auto_scheduler
 
+import tvm
+
 from common import load_and_register_tasks, get_to_measure_filename
 
 
@@ -57,6 +59,7 @@ def _validate_states(
 def dump_program(
     task,
     size,
+    target=None,
     seed=42,
     max_retry_iter=10,
     force=False,
@@ -67,7 +70,16 @@ def dump_program(
     validate_number=1,
     validate_repeat=1,
 ):
-    filename = get_to_measure_filename(task)
+    if target is not None:
+        task = auto_scheduler.SearchTask(
+            workload_key=task.workload_key,
+            target=target,
+            target_host=None,
+            hardware_params=task.hardware_params,
+            layout_rewrite_option=task.layout_rewrite_option,
+        )
+
+    filename = get_to_measure_filename(task, target)
     if os.path.exists(filename) and not force:
         return
     if force and os.path.exists(filename):
@@ -163,6 +175,7 @@ if __name__ == "__main__":
     parser.add_argument("--validate-build-n-parallel", type=int, default=1)
     parser.add_argument("--validate-number", type=int, default=1)
     parser.add_argument("--validate-repeat", type=int, default=1)
+    parser.add_argument("--target", type=str, default=None)
     args = parser.parse_args()
 
     # TVM's SketchPolicy uses `seed or random.randint(...)`, so 0 would be treated as unset.
@@ -176,10 +189,12 @@ if __name__ == "__main__":
     end_idx = args.end_idx or len(tasks)
 
     # Dump programs for all tasks
+    target = tvm.target.Target(args.target) if args.target else None
     for task in tqdm(tasks[start_idx:end_idx]):
         dump_program(
             task,
             size=args.size,
+            target=target,
             seed=sketch_seed,
             force=args.force,
             validate_state=args.validate_state,
