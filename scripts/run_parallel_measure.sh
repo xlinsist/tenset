@@ -97,6 +97,23 @@ if [[ -n "${CUDA_ARCH}" ]]; then
 fi
 
 IFS=',' read -r -a GPUS <<< "$GPU_LIST"
+if command -v nvidia-smi >/dev/null 2>&1; then
+  DETECTED_GPU_COUNT="$(nvidia-smi -L 2>/dev/null | grep -c '^GPU ' || true)"
+else
+  DETECTED_GPU_COUNT=0
+fi
+if [[ "${DETECTED_GPU_COUNT}" -gt 0 ]]; then
+  FILTERED=()
+  for g in "${GPUS[@]}"; do
+    if [[ "$g" -lt "${DETECTED_GPU_COUNT}" ]]; then
+      FILTERED+=("$g")
+    fi
+  done
+  if [[ "${#FILTERED[@]}" -lt "${#GPUS[@]}" ]]; then
+    echo "[INFO] clamp gpus from ${GPU_LIST} to $(IFS=,; echo "${FILTERED[*]}") (detected=${DETECTED_GPU_COUNT})"
+  fi
+  GPUS=("${FILTERED[@]}")
+fi
 NUM_GPUS="${#GPUS[@]}"
 if [[ "$NUM_GPUS" -eq 0 ]]; then
   echo "No GPU provided via --gpus"

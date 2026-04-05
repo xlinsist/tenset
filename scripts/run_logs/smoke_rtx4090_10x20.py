@@ -26,6 +26,13 @@ def ensure_dir(path):
 def now():
     return time.strftime("%F %T")
 
+def detect_gpu_count():
+    try:
+        out = subprocess.check_output(["nvidia-smi", "-L"], text=True, stderr=subprocess.STDOUT)
+        return sum(1 for ln in out.splitlines() if ln.strip().startswith("GPU "))
+    except Exception:
+        return 0
+
 
 def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
@@ -116,6 +123,16 @@ def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
 
 def launch(task_start, task_count, per_task_sched, num_gpus, out_dir):
     ensure_dir(out_dir)
+    detected = detect_gpu_count()
+    if detected > 0 and num_gpus > detected:
+        print(
+            f"[{now()}] requested num_gpus={num_gpus} but detected={detected}; clamp to {detected}",
+            flush=True,
+        )
+        num_gpus = detected
+    if num_gpus <= 0:
+        raise ValueError("num_gpus must be > 0")
+
     task_end = task_start + task_count
     task_indices = list(range(task_start, task_end))
     shards = [task_indices[i::num_gpus] for i in range(num_gpus)]
