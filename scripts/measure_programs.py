@@ -307,7 +307,8 @@ if __name__ == "__main__":
             measurer_kwargs=single_kwargs,
             max_error_msg=args.max_error_msg,
         )
-        sys.exit(0)
+        sys.stdout.flush()
+        os._exit(0)
 
     print("Load all tasks...")
     tasks = load_and_register_tasks()
@@ -362,3 +363,6 @@ if __name__ == "__main__":
 
         with open("progress.txt", "a") as fout:
             fout.write(f"End {i}/{len(tasks)}: {time.time():.2f}\n")
+
+    sys.stdout.flush()
+    os._exit(0)
