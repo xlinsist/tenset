@@ -648,6 +648,9 @@ def _timed_func(inp_serialized, build_func, verbose):
         filename = os.path.join(dirname, "tmp_func." + build_func.output_format)
 
         try:
+            # Ensure nvcc always gets a concrete arch in LocalBuilder workers.
+            if str(task.target.kind) == "cuda" and "arch" in task.target.attrs:
+                set_cuda_target_arch(task.target.attrs["arch"])
             with transform.PassContext():
                 func = build_module.build(
                     sch, args, target=task.target, target_host=task.target_host
