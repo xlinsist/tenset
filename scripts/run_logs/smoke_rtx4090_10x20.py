@@ -43,6 +43,7 @@ def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
     )
     measurer = auto_scheduler.measure.ProgramMeasurer(builder, runner, callbacks=[], verbose=0)
 
+    err_tsv = out_tsv.replace(".tsv", ".errors.tsv")
     with open(out_tsv, "w") as fout:
         fout.write(
             "ts\ttask_idx\tsched_idx\tgpu_id\terror_no\tall_cost\tcost0\twall_s\terror_sig\tout_record\n"
@@ -81,6 +82,17 @@ def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
                 if error_no == 0:
                     ok_inputs.append(m_inp)
                     ok_results.append(res)
+                else:
+                    existed = os.path.exists(err_tsv)
+                    with open(err_tsv, "a") as ef:
+                        if not existed:
+                            ef.write("ts\ttask_idx\tsched_idx\tgpu_id\terror_no\terror_sig\terror_msg\n")
+                        msg = str(err_msg).replace("\n", "\\n").replace("\t", " ")
+                        if len(msg) > 8192:
+                            msg = msg[:8192] + "...[truncated]"
+                        ef.write(
+                            f"{now()}\t{task_idx}\t{sched_idx}\t{gpu_id}\t{error_no}\t{err_sig}\t{msg}\n"
+                        )
 
                 fout.write(
                     f"{now()}\t{task_idx}\t{sched_idx}\t{gpu_id}\t{error_no}\t"
