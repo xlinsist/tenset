@@ -90,6 +90,12 @@ export PATH="/usr/local/cuda/bin:${PATH}"
 export PYTHONPATH="../python"
 export TVM_LIBRARY_PATH="../build"
 
+CUDA_ARCH="$(echo "${TARGET}" | sed -n 's/.*-arch=\([^[:space:]]*\).*/\1/p')"
+if [[ -n "${CUDA_ARCH}" ]]; then
+  export TVM_CUDA_TARGET_ARCH="${CUDA_ARCH}"
+  echo "[INFO] TVM_CUDA_TARGET_ARCH=${TVM_CUDA_TARGET_ARCH}"
+fi
+
 IFS=',' read -r -a GPUS <<< "$GPU_LIST"
 NUM_GPUS="${#GPUS[@]}"
 if [[ "$NUM_GPUS" -eq 0 ]]; then

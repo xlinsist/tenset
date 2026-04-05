@@ -18,6 +18,13 @@ from common import (
 
 GPU_KINDS = {"cuda", "rocm", "opencl", "vulkan", "metal"}
 
+def _set_cuda_arch_env(target):
+    if str(target.kind) != "cuda":
+        return
+    arch = str(target.attrs.get("arch", "")).strip()
+    if arch:
+        os.environ["TVM_CUDA_TARGET_ARCH"] = arch
+
 
 def make_measurer(
     build_timeout,
@@ -283,6 +290,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     target = tvm.target.Target(args.target)
+    _set_cuda_arch_env(target)
     is_gpu_target = str(target.kind) in GPU_KINDS
 
     if args.mode == "single":

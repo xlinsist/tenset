@@ -32,6 +32,9 @@ def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
     os.environ["TVM_NUM_THREADS"] = "1"
 
     target = tvm.target.Target(TARGET_STR)
+    arch = str(target.attrs.get("arch", "")).strip()
+    if arch:
+        os.environ["TVM_CUDA_TARGET_ARCH"] = arch
     all_tasks = load_and_register_tasks()
 
     builder = auto_scheduler.measure.LocalBuilder(timeout=120, n_parallel=1)
