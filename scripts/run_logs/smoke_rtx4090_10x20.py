@@ -11,9 +11,10 @@ from tvm import auto_scheduler
 
 from common import (
     get_measure_record_filename,
-    get_to_measure_filename_compat,
+    get_to_measure_filename,
     load_and_register_tasks,
 )
+from dump_programs import dump_program
 
 
 TARGET_STR = "cuda -arch=sm_89 -model=rtx4090"
@@ -57,7 +58,23 @@ def run_worker(gpu_id, task_indices, per_task_sched, out_tsv):
         )
         for task_idx in task_indices:
             task = all_tasks[task_idx]
-            to_file = get_to_measure_filename_compat(task, target)
+            to_file = get_to_measure_filename(task, target)
+            if not os.path.exists(to_file):
+                # Do not fallback to legacy cuda pool (can mix architectures and trigger INVALID_PTX).
+                dump_program(
+                    task,
+                    size=per_task_sched,
+                    target=target,
+                    seed=42,
+                    force=False,
+                )
+            if not os.path.exists(to_file):
+                with open(out_tsv.replace(".tsv", ".errors.tsv"), "a") as ef:
+                    ef.write(
+                        f"{now()}\t{task_idx}\t-1\t{gpu_id}\t2\tMISSING_TO_MEASURE\t"
+                        f"cannot_generate_{to_file}\n"
+                    )
+                continue
             inputs, _ = auto_scheduler.RecordReader(to_file).read_lines()
             inputs = list(inputs)[:per_task_sched]
             if not inputs:
