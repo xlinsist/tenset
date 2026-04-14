@@ -62,6 +62,7 @@ def get_tuning_option(tuning_args, target):
 
 def tune_and_evaluate(network_args, tuning_args, target, target_host, result_file, transfer_tune, search_type):
     mod, params, inputs = get_network(network_args)
+    measure_ctx = None
 
     # Do auto-tuning
     if not tuning_args['eval_only']:
@@ -92,7 +93,7 @@ def tune_and_evaluate(network_args, tuning_args, target, target_host, result_fil
         else:
             tuner.transfer_tune(tuning_opt, search_policy=policy)
 
-    best_by_targetkey, _ = local_search(log_file)
+    best_by_targetkey, _ = local_search(log_file, n_lines=tuning_args.get("n_lines"))
     if search_type == "random":
         prof_res = random_search(best_by_targetkey, network_args, target)
     else:
@@ -178,4 +179,3 @@ if __name__ == "__main__":
 
     tune_and_evaluate(network_args, tuning_args, target, args.target_host,
                       args.result_file, args.transfer_tune, args.search_type)
-

@@ -19,6 +19,27 @@
 
 from .cost_model import RandomModel, RandomModelInternal
 from .xgb_model import XGBModel
-from .mlp_model import MLPModel
-from .lgbm_model import LGBModel
-from .tabnet_model import TabNetModel
+
+import os
+
+# Optional cost models may require heavy extra dependencies (e.g. torch/lightgbm).
+# Keep base auto_scheduler import usable by default; opt in via env var when needed.
+MLPModel = None
+LGBModel = None
+TabNetModel = None
+
+if os.environ.get("TVM_ENABLE_OPTIONAL_COST_MODELS", "0") == "1":
+    try:
+        from .mlp_model import MLPModel
+    except Exception:  # pylint: disable=broad-except
+        MLPModel = None
+
+    try:
+        from .lgbm_model import LGBModel
+    except Exception:  # pylint: disable=broad-except
+        LGBModel = None
+
+    try:
+        from .tabnet_model import TabNetModel
+    except Exception:  # pylint: disable=broad-except
+        TabNetModel = None

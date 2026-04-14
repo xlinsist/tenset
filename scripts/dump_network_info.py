@@ -21,15 +21,29 @@ from common import (convert_to_nhwc, dtype2torch, NETWORK_INFO_FOLDER,
 def get_network_with_key(network_key):
     name, args = network_key
 
-    if name in ['resnet_18', 'resnet_50', 'mobilenet_v2', 'mobilenet_v3',
+    if name in ['resnet_18', 'resnet_50']:
+        import tvm.relay.testing
+
+        input_shape = args[0]
+        dtype = "float32"
+        batch_size, channels, image_h, image_w = input_shape
+        assert channels == 3, f"Unexpected channel count for {name}: {channels}"
+        num_layers = int(name.split("_")[1])
+        mod, params = relay.testing.resnet.get_workload(
+            num_layers=num_layers,
+            batch_size=batch_size,
+            image_shape=(channels, image_h, image_w),
+            dtype=dtype,
+        )
+        mod = convert_to_nhwc(mod)
+        inputs = [("data", input_shape, dtype)]
+    elif name in ['mobilenet_v2', 'mobilenet_v3',
                 'wide_resnet_50', 'resnext_50', 'resnet3d_18', 'inception_v3',
                 'densenet_121', 'vgg_16']:
         import torch
         import torchvision.models as models   # torchvision>=0.9.0
 
-        if name in ['resnet_18', 'resnet_50']:
-            model = getattr(models, name.replace('_', ''))(pretrained=False)
-        elif name == 'wide_resnet_50':
+        if name == 'wide_resnet_50':
             model = getattr(models, 'wide_resnet50_2')(pretrained=False)
         elif name == 'resnext_50':
             model = getattr(models, 'resnext50_32x4d')(pretrained=False)

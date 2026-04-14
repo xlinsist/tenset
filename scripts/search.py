@@ -66,6 +66,7 @@ def local_search(records, n_lines=None, n_lines_per_task=None):
     best_by_model = {}
 
     counter = 0
+    record_id = 0
     counter_per_task = {}
     for inp, res in records:
         task = input_to_learning_task(inp)
@@ -90,10 +91,8 @@ def local_search(records, n_lines=None, n_lines_per_task=None):
             )
             if workload_args not in entry:
                 entry[workload_args] = []
-            try:
-                heapq.heappush(entry[workload_args], (cost, inp, res))
-            except:
-                print("same cost. continue")
+            heapq.heappush(entry[workload_args], (cost, record_id, inp, res))
+            record_id += 1
 
         # use model as key to build best map
         entry, _, workload_args = get_workload_entry(
@@ -103,7 +102,8 @@ def local_search(records, n_lines=None, n_lines_per_task=None):
             if inp.task.target.model != "unknown":
                 entry[workload_args] = []
         if inp.task.target.model != "unknown":
-            heapq.heappush(entry[workload_args], (cost, inp, res))
+            heapq.heappush(entry[workload_args], (cost, record_id, inp, res))
+            record_id += 1
 
     return best_by_targetkey, best_by_model
 
@@ -116,8 +116,8 @@ def random_choose(global_search_space, top_k):
             for arg in global_search_space[key][hash]:
                 candidates = heapq.nsmallest(top_k, global_search_space[key][hash][arg])
                 selected = random.choice(candidates)
-                inputs.append(selected[1])
-                results.append(selected[2])
+                inputs.append(selected[2])
+                results.append(selected[3])
     return inputs, results
 
 
@@ -173,4 +173,3 @@ def random_search(global_search_space, network_args, target, total_cts=30, top_k
         ct += 1
         print(f"Cost for current round is {best_cost}. Time used is {time.time()-start_search}")
     return best_cost
-

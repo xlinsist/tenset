@@ -1020,22 +1020,48 @@ def local_run(
             disable_gpu_timeout_fallback = (
                 os.environ.get("TENSET_DISABLE_GPU_TIMEOUT_FALLBACK", "0") == "1"
             )
-
-            res = call_func_with_timeout(
-                timeout,
-                _timed_eval_func,
-                args=(
-                    inp.serialize(),
-                    build_res,
-                    number,
-                    repeat,
-                    min_repeat_ms,
-                    cooldown_interval,
-                    enable_cpu_cache_flush,
-                    verbose,
-                ),
-                add_thread_wrapper=True,
+            force_gpu_direct_run = (
+                os.environ.get("TENSET_FORCE_GPU_DIRECT_RUN", "0") == "1"
             )
+
+            if is_gpu_target and force_gpu_direct_run:
+                try:
+                    res = _timed_eval_func(
+                        inp.serialize(),
+                        build_res,
+                        number,
+                        repeat,
+                        min_repeat_ms,
+                        cooldown_interval,
+                        enable_cpu_cache_flush,
+                        verbose,
+                    )
+                except Exception:  # pylint: disable=broad-except
+                    if verbose >= 1:
+                        print("*E", end="", flush=True)
+                    res = (
+                        (MAX_FLOAT,),
+                        MeasureErrorNo.RUNTIME_DEVICE,
+                        make_traceback_info(),
+                        build_res.time_cost,
+                        time.time(),
+                    )
+            else:
+                res = call_func_with_timeout(
+                    timeout,
+                    _timed_eval_func,
+                    args=(
+                        inp.serialize(),
+                        build_res,
+                        number,
+                        repeat,
+                        min_repeat_ms,
+                        cooldown_interval,
+                        enable_cpu_cache_flush,
+                        verbose,
+                    ),
+                    add_thread_wrapper=True,
+                )
 
             if isinstance(res, TimeoutError):
                 # On some GPU setups, subprocess wrapper can return timeout while

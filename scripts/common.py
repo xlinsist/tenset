@@ -1,4 +1,6 @@
 from collections import defaultdict, namedtuple
+from pathlib import Path
+import os
 import pickle
 
 import tvm
@@ -103,8 +105,33 @@ def get_measure_record_filename_legacy(task, target=None):
     task_key = (task.workload_key, str(target.kind))
     return f"{MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
 
+def get_all_tasks_path():
+    candidates = []
+    env_override = os.environ.get("TVM_ALL_TASKS_PATH", "").strip()
+    if env_override:
+        candidates.append(Path(env_override))
+
+    candidates.extend(
+        [
+            Path(NETWORK_INFO_FOLDER) / "all_tasks.pkl",
+            Path(NETWORK_INFO_FOLDER) / "network_info" / "all_tasks.pkl",
+            Path("dataset_gpu_old/network_info/all_tasks.pkl"),
+            Path("dataset_cpu/network_info/all_tasks.pkl"),
+        ]
+    )
+
+    for path in candidates:
+        if path.exists():
+            return path
+
+    raise FileNotFoundError(
+        "Unable to locate all_tasks.pkl; checked: %s"
+        % ", ".join(str(path) for path in candidates)
+    )
+
+
 def load_and_register_tasks():
-    tasks = pickle.load(open(f"{NETWORK_INFO_FOLDER}/all_tasks.pkl", "rb"))
+    tasks = pickle.load(open(get_all_tasks_path(), "rb"))
 
     for task in tasks:
         auto_scheduler.workload_registry.register_workload_tensors(
