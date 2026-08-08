@@ -179,17 +179,17 @@ class SketchPolicy(SearchPolicy):
     DEFAULT_PARAMS = {
         "eps_greedy": 0.05,
         "retry_search_one_round_on_empty": 1,
-        "sample_init_min_population": 50,
+        "sample_init_min_population": 200,
         "sample_init_use_measured_ratio": 0.2,
-        "evolutionary_search_population": 2048,
-        "evolutionary_search_num_iters": 4,
+        "evolutionary_search_population": 8192,
+        "evolutionary_search_num_iters": 16,
         "evolutionary_search_mutation_prob": 0.85,
         "cpu_multi_level_tiling_structure": "SSRSRS",
         "gpu_multi_level_tiling_structure": "SSSRRSRS",
         # Notice: the default thread bind policy of GPU assumes the tiling structure to have at
         # least 3 spatial tiling levels in outermost
-        "max_innermost_split_factor": 64,
-        "max_vectorize_size": 16,
+        "max_innermost_split_factor": 256,
+        "max_vectorize_size": 64,
         "disable_change_compute_location": 0,
     }
 

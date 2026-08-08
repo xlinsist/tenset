@@ -105,6 +105,20 @@ def get_measure_record_filename_legacy(task, target=None):
     task_key = (task.workload_key, str(target.kind))
     return f"{MEASURE_RECORD_FOLDER}/{target.model}/{clean_name(task_key)}.json"
 
+
+def get_measure_record_filename_compat(task, target=None):
+    # Prefer the new signature, fallback to historical kind-only key.
+    import os
+
+    new_file = get_measure_record_filename(task, target)
+    if os.path.exists(new_file):
+        return new_file
+
+    old_file = get_measure_record_filename_legacy(task, target)
+    if os.path.exists(old_file):
+        return old_file
+    return new_file
+
 def get_all_tasks_path():
     candidates = []
     env_override = os.environ.get("TVM_ALL_TASKS_PATH", "").strip()
